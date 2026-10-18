@@ -1,0 +1,142 @@
+{
+  "version": "1.0",
+  "description": "技术支持工单 Agent 的最小人工评估集。问题、参考依据和检查项不写入 Chroma。此文件不是评估通过报告。",
+  "execution": "逐条在 Agent 中输入 question，单独输入 END 提交；decision 只在草稿确认提示出现后输入。每个案例使用新会话，案例内部的多次提问保持同一会话。",
+  "cases": [
+    {
+      "id": "E01",
+      "category": "知识问答",
+      "preconditions": ["知识库已建好"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "单个PDF文件最大支持多大？如果超过限制应该怎么办？",
+        "expected_tools": ["search_docs"],
+        "reference_kb_ids": ["KB-022", "KB-023", "KB-024", "KB-062"],
+        "checks": ["说明大小最多10MB、恰好10MB允许", "建议拆分后每个文件同时满足大小和页数限制", "关键结论引用实际检索到且支持结论的KB片段"]
+      }]
+    },
+    {
+      "id": "E02",
+      "category": "依据不足时不猜原因",
+      "preconditions": ["知识库已建好"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "上传PDF时报E102，我没看到错误详情。这一定是文件太大了吗？",
+        "expected_tools": ["search_docs"],
+        "reference_kb_ids": ["KB-022", "KB-023", "KB-062"],
+        "checks": ["说明大小超限和页数超限都有可能", "建议查看错误详情区分原因", "不凭错误码断定一定是大小超限"]
+      }]
+    },
+    {
+      "id": "E03",
+      "category": "资料不足",
+      "preconditions": ["教学知识库仅包含知库助手1.0资料，没有2.0私有部署报价"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "知库助手2.0私有部署一年的准确报价是多少？",
+        "expected_tools": ["search_docs"],
+        "reference_kb_ids": [],
+        "checks": ["明确说明现有资料不足，无法给出准确报价", "不编造价格、折扣或2.0版本功能", "不拿1.0的其他规则作为2.0报价依据"]
+      }]
+    },
+    {
+      "id": "E04",
+      "category": "实时工单状态",
+      "preconditions": ["演示身份能访问T-000002，工作人员已将其改为已解决"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "请查询工单T-000002当前的处理状态。",
+        "expected_tools": ["get_ticket"],
+        "reference_kb_ids": [],
+        "checks": ["工具参数ticket_id为T-000002", "回答已解决，并与本次工具结果一致", "不以Chroma或旧对话中的状态代替实时查询"]
+      }]
+    },
+    {
+      "id": "E05",
+      "category": "查询业务失败",
+      "preconditions": ["T-999999不存在，或当前身份无权访问"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "帮我查询工单T-999999的当前处理状态。",
+        "expected_tools": ["get_ticket"],
+        "reference_kb_ids": [],
+        "checks": ["收到ok=false后说明查询失败", "保留工具给出的不存在或无权访问的含义", "不编造工单状态"]
+      }]
+    },
+    {
+      "id": "E06",
+      "category": "按原请求核查",
+      "preconditions": ["演示请求R-90c8846297934a45991f8757abec0cc8对应T-000002"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "请核查创建请求R-90c8846297934a45991f8757abec0cc8是否已经生成工单，不要新建。",
+        "expected_tools": ["find_ticket_by_request"],
+        "reference_kb_ids": [],
+        "checks": ["沿用原request_id", "根据found=true和工具中的正式编号回答已生成T-000002", "不准备新草稿或调用创建工具"]
+      }]
+    },
+    {
+      "id": "E07",
+      "category": "原请求重复执行",
+      "preconditions": ["原草稿D-32164e977bc9455d9521e76779dea0cf已确认且已创建T-000002"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "请使用已确认的原草稿D-32164e977bc9455d9521e76779dea0cf重试创建工单，不要准备新草稿。",
+        "expected_tools": ["create_ticket"],
+        "reference_kb_ids": [],
+        "checks": ["调用使用原draft_id", "仍返回T-000002和原request_id", "不新增正式工单，不把已解决状态重置为待处理"]
+      }]
+    },
+    {
+      "id": "E08",
+      "category": "多行问题与取消创建",
+      "preconditions": ["在确认提示出现后输入取消"],
+      "writes_formal_ticket": false,
+      "turns": [{
+        "question": "帮我登记一个测试工单：上传5MB的PDF时报E103。\n文件可以选择文字，重新上传仍失败。",
+        "decision": "取消",
+        "expected_tools": ["prepare_ticket"],
+        "reference_kb_ids": [],
+        "checks": ["草稿保留文件大小、错误码、可选择文字和重传失败的信息", "取消后不调用create_ticket，不批准草稿", "返回输入入口，仍可继续提问"]
+      }, {
+        "question": "请查询工单T-000002当前的处理状态。",
+        "expected_tools": ["get_ticket"],
+        "reference_kb_ids": [],
+        "checks": ["取消后能继续接收并处理这个新问题", "没有缺失工具结果消息的协议错误", "按本次工具结果回答已解决，不继续执行已取消的建单"]
+      }]
+    },
+    {
+      "id": "E09",
+      "category": "人工确认后正式建单",
+      "preconditions": ["这是一次新增演示工单的人工测试，核对草稿内容后再确认"],
+      "writes_formal_ticket": true,
+      "turns": [{
+        "question": "帮我登记一个评估测试工单：上传2MB的PDF时报E103，重新上传仍失败。",
+        "decision": "确认",
+        "expected_tools": ["prepare_ticket", "create_ticket"],
+        "reference_kb_ids": [],
+        "checks": ["先展示草稿并等待人工确认", "批准后调用create_ticket，沿用该草稿编号", "创建工具ok=true且返回正式ticket_id后，才告知已创建", "登记内容来自本次问题，不编造故障原因"]
+      }]
+    },
+    {
+      "id": "E10",
+      "category": "连续追问",
+      "preconditions": ["本案例两次提问在同一个Agent会话中完成"],
+      "writes_formal_ticket": false,
+      "turns": [
+        {
+          "question": "单个PDF最大支持多大？",
+          "expected_tools": ["search_docs"],
+          "reference_kb_ids": ["KB-022"],
+          "checks": ["回答最大10MB且有资料支持"]
+        },
+        {
+          "question": "那页数最多多少？",
+          "expected_tools": [],
+          "reference_kb_ids": ["KB-023"],
+          "checks": ["理解为PDF页数上限，回答最多200页", "可复用上一轮已检索的KB-023；若历史没有相关依据，应再次检索", "引用来自本次或历史中实际检索到的相关片段"]
+        }
+      ]
+    }
+  ]
+}

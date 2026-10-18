@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>知库 · 技术支持助手</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2313242b'/%3E%3Cpath d='M9 9h14v10H13l-4 4z' fill='%238de1cc'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css"><script defer src="/static/app.js"></script>
+</head>
+<body>
+<!-- 开发说明：内嵌SVG图标定义；app.js的icon()与静态use标签都引用这里的symbol ID。 -->
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z"/><path d="M7 9h10M7 13h6"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6v15M3 4c4-1 6 0 9 2 3-2 5-3 9-2v15c-4-1-6 0-9 2-3-2-5-3-9-2Z"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 6h18v4a2 2 0 0 0 0 4v4H3v-4a2 2 0 0 0 0-4ZM15 6v3m0 3v2m0 3v1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+</defs></svg>
+<!-- 开发说明：侧栏是当前会话导航与静态说明；真正的历史保存在后端Session，未实现跨重启历史列表。 -->
+<aside class="sidebar">
+  <a class="brand" href="/" aria-label="知库首页"><span class="brand-icon"><svg><use href="#i-chat"/></svg></span><span>知库<span class="brand-sub">SUPPORT DESK</span></span></a>
+  <button class="new-chat" data-new><svg><use href="#i-plus"/></svg>新建对话<span class="key">＋</span></button>
+  <div class="side-label">工作空间</div>
+  <div class="current-session"><svg><use href="#i-chat"/></svg><div><strong>技术支持对话</strong><span id="session-title">从一个问题开始</span></div><span class="active-dot"></span></div>
+  <div class="side-guide"><div class="side-label">在这里，你可以</div><p><svg><use href="#i-book"/></svg>查阅产品规则与操作说明</p><p><svg><use href="#i-ticket"/></svg>确认问题并登记工单</p><p><svg><use href="#i-search"/></svg>跟进已有工单的进度</p></div>
+  <div class="side-bottom"><span class="small-logo">知</span><div><strong>知库助手 1.0</strong><span>本地学习版</span></div><span class="version">v0.1</span></div>
+</aside>
+<main>
+  <header class="topbar"><div><span class="breadcrumb">工作空间 <span>/</span></span><strong>技术支持</strong></div><div class="header-actions"><button id="open-settings" class="knowledge-button">服务配置</button><button id="open-knowledge" class="knowledge-button"><svg><use href="#i-book"/></svg>知识库</button><button class="mobile-new" data-new aria-label="新建对话"><svg><use href="#i-plus"/></svg></button><span class="connection" id="connection"><i></i><span>连接中</span></span></div></header>
+  <div id="banner" class="banner" role="alert" hidden></div>
+<!-- 开发说明：chat-kb为聊天绑定库；切换事件会新建会话，不能只修改下拉框就视为后端已切库。 -->
+  <div class="kb-context"><label for="chat-kb"><svg><use href="#i-book"/></svg>当前知识库</label><select id="chat-kb" aria-label="聊天知识库" disabled><option value="default">默认知识库</option></select><span>切换后开启新对话</span></div>
+  <div class="workspace">
+    <section class="chat-area" aria-label="支持对话">
+      <div class="scroll-area" id="scroll-area">
+        <div class="welcome" id="welcome">
+          <div class="welcome-mark"><svg><use href="#i-chat"/></svg><span class="spark">✦</span></div>
+          <div class="eyebrow">让每个问题，都有下一步</div>
+          <h1>今天有什么需要帮助？</h1>
+          <p class="welcome-desc">从当前知识库查阅资料、找到操作方法，<br class="mobile-break">也可以登记问题或查询工单进度。</p>
+<!-- 开发说明：data-prompt供JS填入问题，不自动提交；内容面向当前所选知识库。 -->
+          <div class="suggestions">
+            <button data-prompt="当前知识库介绍了哪些用途和适用范围？请引用依据。"><span class="suggest-icon"><svg><use href="#i-book"/></svg></span><strong>了解当前资料</strong><span>查看用途和适用范围</span><svg class="card-arrow"><use href="#i-chevron"/></svg></button>
+            <button data-prompt="请检索当前知识库中的常见操作说明。"><span class="suggest-icon"><svg><use href="#i-search"/></svg></span><strong>查找操作步骤</strong><span>查阅资料中的操作说明</span><svg class="card-arrow"><use href="#i-chevron"/></svg></button>
+            <button data-prompt="当前知识库有哪些常见问题及对应处理方法？"><span class="suggest-icon"><svg><use href="#i-ticket"/></svg></span><strong>排查常见问题</strong><span>寻找问题的处理方法</span><svg class="card-arrow"><use href="#i-chevron"/></svg></button>
+          </div>
+          <div class="welcome-note"><svg><use href="#i-check"/></svg>创建前会展示草稿，由你确认后再提交</div>
+        </div>
+<!-- 开发说明：动态消息、工具过程与审批卡片的容器；JS用textContent或文本节点插入业务内容。 -->
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div id="activity" class="activity" hidden><span class="spinner"></span><span></span></div>
+      </div>
+      <div class="composer-wrap"><form id="composer" class="composer"><label for="question" class="sr-only">输入你的问题</label><textarea id="question" rows="2" maxlength="20000" placeholder="描述你的问题，或输入工单编号…" disabled></textarea><div class="composer-bottom"><span><svg><use href="#i-chat"/></svg>支持多行描述</span><button id="send" class="send" type="submit" disabled><span>发送</span><svg><use href="#i-arrow"/></svg></button></div></form><div class="composer-hint"><span>Enter 发送 · Shift + Enter 换行</span><span>关键操作需经你确认</span></div></div>
+    </section>
+<!-- 开发说明：参考资料只来自当前会话search_docs返回结果；切库新建对话时清空。 -->
+    <aside class="reference-panel" id="reference-panel" aria-label="参考资料" hidden><div class="reference-head"><div><span class="eyebrow">回答依据</span><h2>参考资料</h2></div><button id="close-references" class="icon-button" aria-label="关闭参考资料"><svg><use href="#i-close"/></svg></button></div><div id="references"></div></aside>
+  </div>
+</main>
+<!-- 开发说明：上传对话框的upload-kb和聊天chat-kb独立；文件列表由后端按目标库返回。 -->
+<dialog id="knowledge-dialog" aria-labelledby="knowledge-title">
+  <div class="knowledge-head"><div><div class="eyebrow">让回答有据可查</div><h2 id="knowledge-title">知识库</h2></div><button id="close-knowledge" class="icon-button" aria-label="关闭知识库"><svg><use href="#i-close"/></svg></button></div>
+  <p class="knowledge-intro">上传产品说明或常见问题，入库后即可在对话中提问。</p>
+  <form id="create-kb-form" class="create-kb-form"><label for="kb-name" class="sr-only">新知识库名称</label><input id="kb-name" placeholder="新知识库名称" maxlength="60" required autocomplete="off"><button class="secondary" id="create-kb" type="submit">新建知识库</button></form>
+  <div class="upload-base-row"><label for="upload-kb">上传到</label><select id="upload-kb" aria-label="上传目标知识库"><option value="default">默认知识库</option></select><button id="use-kb" class="knowledge-refresh" type="button">使用此库聊天</button></div>
+  <form id="upload-form">
+    <label class="file-zone" for="knowledge-file"><svg><use href="#i-book"/></svg><strong id="selected-file">选择一份知识资料</strong><span>TXT、Markdown、文字型 PDF、JSONL · 单文件最大 10MB</span><input id="knowledge-file" type="file" accept=".txt,.md,.markdown,.pdf,.jsonl" aria-label="选择知识文件"></label>
+    <p class="parse-note">扫描件、复杂 PDF：先用 MinerU 解析，再上传生成的 Markdown。</p>
+    <div class="upload-action"><span>保留已有知识，相同文件内容自动跳过</span><button class="primary" id="upload-start" type="submit" disabled>上传并入库</button></div>
+  </form>
+  <div id="upload-feedback" class="upload-feedback" role="status" aria-live="polite" hidden></div>
+  <div class="knowledge-list-head"><h3>已上传资料</h3><button id="refresh-knowledge" class="knowledge-refresh" type="button">刷新</button></div>
+  <p class="parse-note">只展示所选库从网页上传的资料。原有资料保留在默认知识库。</p>
+  <div id="knowledge-files" class="knowledge-files"></div>
+</dialog>
+<!-- 开发说明：本机服务配置入口：无预设value；placeholder只是填写说明，不是可用接口。
+密码框只收集用户新输入，不回显后端明文Key；MinerU尚未接入上传解析。 -->
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+  <div class="knowledge-head"><div><div class="eyebrow">连接你自己的服务</div><h2 id="settings-title">服务配置</h2></div><button id="close-settings" class="icon-button" aria-label="关闭服务配置"><svg><use href="#i-close"/></svg></button></div>
+  <p class="knowledge-intro">分别设置聊天、向量化和文档解析服务。模型接口需兼容 OpenAI API；聊天模型还需支持工具调用。</p>
+  <form id="settings-form">
+    <fieldset class="service-section"><legend>聊天模型 <span id="chat-key-state" class="key-state"></span></legend><p>负责理解问题、选择工具和组织回答。</p>
+      <label for="chat-base-url">接口地址（Base URL）</label><input id="chat-base-url" type="url" placeholder="https://你的服务地址/v1" required autocomplete="off">
+      <label for="chat-model">模型名称</label><input id="chat-model" placeholder="填写服务商提供的聊天模型名" required maxlength="200" autocomplete="off">
+      <label for="chat-key">API Key</label><input id="chat-key" type="password" placeholder="留空保留当前 Key" autocomplete="new-password">
+    </fieldset>
+    <fieldset class="service-section"><legend>Embedding 模型 <span id="embedding-key-state" class="key-state"></span></legend><p>负责把知识正文和检索问题转换成向量，可与聊天模型使用不同服务。</p>
+      <label for="embedding-base-url">接口地址（Base URL）</label><input id="embedding-base-url" type="url" placeholder="https://你的向量服务地址/v1" required autocomplete="off">
+      <label for="embedding-model">模型名称</label><input id="embedding-model" placeholder="填写服务商提供的Embedding模型名" required maxlength="200" autocomplete="off">
+      <label for="embedding-dimensions">向量维度</label><input id="embedding-dimensions" type="number" min="1" max="65536" placeholder="留空使用模型默认维度">
+      <label for="embedding-key">API Key</label><input id="embedding-key" type="password" placeholder="留空保留当前 Key" autocomplete="new-password">
+      <div class="service-note">更换模型、地址或维度会使用独立索引，需要重新导入知识资料；原索引会保留。</div>
+    </fieldset>
+    <fieldset class="service-section"><legend>MinerU <span class="badge">仅保存配置</span><span id="mineru-key-state" class="key-state"></span></legend><p>先保存自己的接口地址与 Token，文档解析流程将在后续接入。</p>
+      <label for="mineru-base-url">接口地址</label><input id="mineru-base-url" type="url" placeholder="填写你的 MinerU 云端或私有服务地址" autocomplete="off">
+      <label for="mineru-key">API Key / Token</label><input id="mineru-key" type="password" placeholder="留空保留当前 Token" autocomplete="new-password">
+    </fieldset>
+    <p class="parse-note">首次使用请自行填写全部模型参数。地址不变时，Key 留空保留当前值；更换地址时请同时填写新服务的 Key。Key 只在本机加密保存，页面不回填明文。</p>
+    <div id="settings-feedback" class="upload-feedback" role="status" aria-live="polite" hidden></div>
+    <div class="settings-actions"><span>保存后开启新会话，已有工单和知识资料保留。</span><button id="save-settings" class="primary" type="submit">保存配置</button></div>
+  </form>
+</dialog>
+</body></html>

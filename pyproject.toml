@@ -1,0 +1,19 @@
+[project]
+name = "work-order-inquiry"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "fastmcp>=4.1.0",
+    "langchain-chroma>=1.1.0",
+    "langchain-core>=1.6.9",
+    "langchain-openai>=1.7.0",
+    "python-dotenv>=1.2.4",
+    "starlette>=1.7.0",
+    "uvicorn>=0.54.0",
+    "pypdf>=6.0.0",
+    "python-multipart>=0.0.20",
+]
+
+[[tool.uv.index]]
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
+default = true
