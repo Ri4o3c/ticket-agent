@@ -91,6 +91,15 @@ class TicketStore:
                     created_at TEXT NOT NULL,
                     UNIQUE(workspace_id, user_id, request_id)
                 );
+                CREATE TABLE IF NOT EXISTS creation_recovery (
+                    workspace_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    draft_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('pending', 'retry_allowed')),
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(workspace_id, user_id, draft_id)
+                );
             """)
 
     # 每次操作创建独立连接；Row允许按列名读取。with db负责提交或异常回滚，
@@ -114,6 +123,11 @@ class TicketStore:
             raise ValueError("标题最多 200 字，描述最多 4000 字")
         draft_id = "D-" + uuid.uuid4().hex
         with self.connect() as db:
+            # 与创建前恢复点写入共用SQLite写锁；不能只依赖提示词或Web进程内标记。
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM creation_recovery WHERE workspace_id=? AND user_id=?',
+                          (actor.workspace_id, actor.user_id)).fetchone():
+                raise PermissionError('原创建请求尚待核查或继续，请勿准备新草稿')
             db.execute("INSERT INTO drafts VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)",
                        (draft_id, actor.workspace_id, actor.user_id,
                         redact(title.strip()), redact(description.strip()), now()))
@@ -170,6 +184,11 @@ class TicketStore:
             row = db.execute("SELECT * FROM tickets WHERE workspace_id=? AND user_id=? AND request_id=?",
                              values).fetchone()
             if row is None:
+                # 独立MCP/CLI也经过同一保护，不能绕过run_turn去创建另一份已批准草稿。
+                # 已存在记录仍可按原请求幂等返回；原恢复草稿重试也继续使用相同request_id。
+                if db.execute('SELECT 1 FROM creation_recovery WHERE workspace_id=? AND user_id=? AND draft_id<>?',
+                              (actor.workspace_id, actor.user_id, draft_id)).fetchone():
+                    raise PermissionError('原创建请求尚待核查，不能创建其他草稿')
                 db.execute("""INSERT INTO tickets
                     (workspace_id, user_id, request_id, draft_id, title, description, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -223,3 +242,49 @@ class TicketStore:
             row = db.execute("SELECT * FROM tickets WHERE request_id=? AND workspace_id=? AND user_id=?",
                              (request_id, actor.workspace_id, actor.user_id)).fetchone()
             return self._ticket(row) if row else None
+
+    def pending_creations(self, actor: Actor) -> list[dict]:
+        """读取本身份未完成的创建恢复点；服务重启、新会话也能找到原D-/R-标识。"""
+        with self.connect() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT draft_id, request_id, state FROM creation_recovery WHERE workspace_id=? AND user_id=?',
+                (actor.workspace_id, actor.user_id))]
+
+    def start_creation(self, draft_id: str, actor: Actor) -> dict:
+        """实际调用MCP创建前，先持久记录待核查状态。
+
+        网络断线、取消或进程中止后这条记录仍存在。查询未命中时仅允许原草稿重试；
+        SQLite持有的锁只覆盖本方法，不跨网络await持有写事务。
+        """
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            draft = self._owned_draft(db, draft_id, actor)
+            if not draft['approved_at'] or not draft['request_id']:
+                raise PermissionError('草稿尚未获用户确认，不能创建工单')
+            rows = db.execute('SELECT * FROM creation_recovery WHERE workspace_id=? AND user_id=?',
+                              (actor.workspace_id, actor.user_id)).fetchall()
+            if any(row['draft_id'] != draft_id or row['state'] != 'retry_allowed' for row in rows):
+                raise PermissionError('原创建请求尚待核查，不能开始新创建')
+            db.execute('''INSERT INTO creation_recovery VALUES (?, ?, ?, ?, 'pending', ?)
+                ON CONFLICT(workspace_id, user_id, draft_id)
+                DO UPDATE SET state='pending', updated_at=excluded.updated_at''',
+                (actor.workspace_id, actor.user_id, draft_id, draft['request_id'], now()))
+            return {'draft_id': draft_id, 'request_id': draft['request_id']}
+
+    def check_creation(self, request_id: str, actor: Actor, *, found: bool):
+        """核查成功才推进恢复状态：查到则关闭恢复点，未查到仅解锁原草稿重试。
+
+        found=False不能创建新请求；工具调用异常也不能调用本方法冒充未查到。
+        """
+        with self.connect() as db:
+            if found:
+                db.execute('DELETE FROM creation_recovery WHERE workspace_id=? AND user_id=? AND request_id=?',
+                           (actor.workspace_id, actor.user_id, request_id))
+            else:
+                db.execute("UPDATE creation_recovery SET state='retry_allowed', updated_at=? "
+                           'WHERE workspace_id=? AND user_id=? AND request_id=?',
+                           (now(), actor.workspace_id, actor.user_id, request_id))
+
+    def finish_creation(self, request_id: str, actor: Actor):
+        """收到可核验的创建结果或确定未执行的业务拒绝时，关闭对应恢复点。"""
+        self.check_creation(request_id, actor, found=True)

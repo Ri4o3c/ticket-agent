@@ -29,7 +29,7 @@
   <div class="side-bottom"><span class="small-logo">知</span><div><strong>知库助手 1.0</strong><span>本地学习版</span></div><span class="version">v0.1</span></div>
 </aside>
 <main>
-  <header class="topbar"><div><span class="breadcrumb">工作空间 <span>/</span></span><strong>技术支持</strong></div><div class="header-actions"><button id="open-settings" class="knowledge-button">服务配置</button><button id="open-knowledge" class="knowledge-button"><svg><use href="#i-book"/></svg>知识库</button><button class="mobile-new" data-new aria-label="新建对话"><svg><use href="#i-plus"/></svg></button><span class="connection" id="connection"><i></i><span>连接中</span></span></div></header>
+  <header class="topbar"><div><span class="breadcrumb">工作空间 <span>/</span></span><strong>技术支持</strong></div><div class="header-actions"><button id="open-runs" class="knowledge-button">执行记录</button><button id="open-settings" class="knowledge-button">服务配置</button><button id="open-knowledge" class="knowledge-button"><svg><use href="#i-book"/></svg>知识库</button><button class="mobile-new" data-new aria-label="新建对话"><svg><use href="#i-plus"/></svg></button><span class="connection" id="connection"><i></i><span>连接中</span></span></div></header>
   <div id="banner" class="banner" role="alert" hidden></div>
 <!-- 开发说明：chat-kb为聊天绑定库；切换事件会新建会话，不能只修改下拉框就视为后端已切库。 -->
   <div class="kb-context"><label for="chat-kb"><svg><use href="#i-book"/></svg>当前知识库</label><select id="chat-kb" aria-label="聊天知识库" disabled><option value="default">默认知识库</option></select><span>切换后开启新对话</span></div>
@@ -59,6 +59,17 @@
     <aside class="reference-panel" id="reference-panel" aria-label="参考资料" hidden><div class="reference-head"><div><span class="eyebrow">回答依据</span><h2>参考资料</h2></div><button id="close-references" class="icon-button" aria-label="关闭参考资料"><svg><use href="#i-close"/></svg></button></div><div id="references"></div></aside>
   </div>
 </main>
+<!-- 开发说明：这里只读SQLite执行记录，不启动Agent、不重试工具，也不恢复聊天内容。
+completed表示执行结束；running只是尚未保存结束，不能据此判定进程仍然活跃。 -->
+<dialog id="runs-dialog" aria-labelledby="runs-title">
+  <div class="knowledge-head"><div><div class="eyebrow">查看每一步发生了什么</div><h2 id="runs-title">执行记录</h2></div><button id="close-runs" class="icon-button" aria-label="关闭执行记录"><svg><use href="#i-close"/></svg></button></div>
+  <p class="run-intro">执行结束不等于任务成功。这里仅展示当前本机身份的记录，不包含对话正文。</p>
+  <form id="run-search" class="run-search"><label for="run-id" class="sr-only">执行编号 run_id</label><input id="run-id" maxlength="200" autocomplete="off" placeholder="粘贴 run_id 查询，例如 run-…"><button id="query-run" class="primary" type="submit">查询</button><button id="refresh-runs" class="secondary" type="button">刷新</button></form>
+  <div class="run-browser">
+    <section class="run-sidebar" aria-label="近期执行"><div class="run-list-heading">最近 50 条执行</div><div id="run-list" aria-live="polite"></div></section>
+    <section id="run-detail" class="run-detail" aria-label="执行详情" aria-live="polite"><p class="run-empty">选择一条记录查看步骤。</p></section>
+  </div>
+</dialog>
 <!-- 开发说明：上传对话框的upload-kb和聊天chat-kb独立；文件列表由后端按目标库返回。 -->
 <dialog id="knowledge-dialog" aria-labelledby="knowledge-title">
   <div class="knowledge-head"><div><div class="eyebrow">让回答有据可查</div><h2 id="knowledge-title">知识库</h2></div><button id="close-knowledge" class="icon-button" aria-label="关闭知识库"><svg><use href="#i-close"/></svg></button></div>

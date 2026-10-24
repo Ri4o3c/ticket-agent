@@ -2,6 +2,24 @@
 
 一个Windows本地单用户学习项目：Python、LangChain、MCP、Chroma和SQLite，附带原生HTML/CSS/JavaScript页面。
 
+2026-10-24更新：增加可靠性修复、执行记录存储与查询页面，以及E04/E05/E08自动评估。
+当前186项软件测试通过；3条案例已实际运行聊天模型，其中2条人工复核通过，E08草稿语义仍待复核。
+这是当前验证范围，不代表已完成企业生产验收；每位使用者仍需自行填写服务配置。
+
+2026-10-20可靠性修复见FIXES_20261020.md；项目进度见PROGRESS.md；可观测性与评估的解释和下一阶段目标见OBSERVABILITY_AND_EVALUATION.md。
+
+2026-10-21已实现执行记录存储与Agent自动采集，见[存储练习](TRACE_STORE_STEP1.md)和[Agent接入说明](TRACE_AGENT_STEP2.md)。可运行`uv run python trace_demo.py`独立练习1条run与3条step；真实CLI/Web执行自动写入记录库。
+
+2026-10-22增加[历史执行查询](TRACE_QUERY_STEP3.md)：页头“执行记录”查看近期记录或按run_id查询，每个问题的处理过程也有对应入口。模型、工具和人工等待分别展示；执行结束不等于评估通过。该步全套132项功能测试通过，尚未完成真实模型质量评估。
+
+同日增加[首条自动评估练习](EVALUATION_STEP1.md)：`uv run python eval_one_case.py`自动准备临时数据，执行E05并输出逐项评分。默认使用固定模型验证评分流程；加入`--scenario no-query`可看到“未查询就回答”如何被判为失败。当时新增13项测试后全套145项通过，不代表真实模型质量已测得。
+
+已增加[真实模型运行入口](EVALUATION_STEP2.md)：配置当前工程的聊天API后，运行`uv run python eval_one_case.py --live`。不需要Embedding或MinerU；默认命令仍是固定模型模式。新增7项测试后全套152项通过。入口代码使用受控HTTP离线验证，真实模型结果需实际运行报告确认。
+
+2026-10-23增加[E04已存在工单评估](EVALUATION_STEP3.md)：`uv run python eval_one_case.py --case E04 --live`。评分标准来自调用前准备的临时工单。新增14项后全套166项测试通过；E04/E05均已真实运行，单次结果和人工复核情况见PROGRESS.md。
+
+同日增加[E08取消后继续对话评估](EVALUATION_STEP4.md)：`uv run python eval_one_case.py --case E08 --live`。18项新增测试后，隔离回归184项通过。真实E08完成取消和后续查询，自动结果needs_review，等待草稿语义人工复核；软件测试数量不等于真实模型案例数量。
+
 **本版本不提供默认API地址、模型名称、向量维度或Key。所有服务参数均由使用者填写。**
 
 ## 可以做什么
@@ -55,7 +73,7 @@ Key加密保存在本机data/service_settings.json，网页不回填明文。也
 
 可先上传examples/knowledge.md体验虚构产品问答。示例资料不自动入库，不会在启动时调用付费服务。
 
-命令行可显式把100条教学分块导入默认知识库：
+命令行可显式把100条教学分块导入默认知识库。全新仓库读取examples/knowledge_chunks.jsonl；若自己准备了data/knowledge_chunks.jsonl，则优先读取该文件：
 
 ```powershell
 uv run python rag_index.py --build
@@ -94,10 +112,12 @@ uv run python -B -m unittest discover -s tests -v
 | knowledge_upload.py、knowledge_preprocess.py | 上传、清洗分块、去重、入库 |
 | rag_index.py、rag_answer.py | 向量检索和独立RAG问答 |
 | ticket_store.py、ticket_cli.py | 工单存储、审批、状态流转 |
+| trace_store.py、agent_trace.py、trace_demo.py | 执行记录存储、Agent采集适配及独立模拟练习 |
+| eval_cases.json、eval_one_case.py、eval_cancellation.py | 10例评估定义与E04/E05/E08执行和独立规则评分 |
 | examples/ | 无私人路径的虚构教学资料 |
 
 ## 上传GitHub
 
-此目录已排除原作者的.env、加密配置、上传资料、工单数据库、向量库、虚拟环境、IDE配置及Git历史。请上传本目录内的源码文件，保留.gitignore；后续自己运行生成的data/、chroma_db/与.env也应继续忽略。
+仓库不包含原作者的.env、加密配置、上传资料、工单数据库、向量库、虚拟环境和IDE配置。请保留.gitignore；后续自己运行生成的data/、chroma_db/与.env也应继续忽略。examples/只有虚构教学资料。
 
 本项目默认只监听127.0.0.1，适合本机学习使用。

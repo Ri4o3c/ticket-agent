@@ -28,7 +28,8 @@ def make_server(store=None, actor=None, searcher=None, knowledge_base='default')
         except ValueError as exc:
             return {"ok": False, "error": "invalid_input", "message": str(exc)}
         except sqlite3.Error:
-            return {"ok": False, "error": "storage_error", "message": "数据库操作未确认，请保留原请求标识核查"}
+            return {"ok": False, "error": "storage_error", "outcome_unknown": True,
+                    "message": "数据库操作未确认，请保留原请求标识核查"}
 
     # question是用户检索意图，k限制为1到10。首次检索才打开向量库，随后复用连接。
     # 生产路径由Embedding向量化查询，再在当前collection搜索；注入searcher时走测试路径。

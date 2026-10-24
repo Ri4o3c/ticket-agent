@@ -17,3 +17,4 @@ chroma_db/
 *.zip
 .DS_Store
 Thumbs.db
+data/service_settings.json

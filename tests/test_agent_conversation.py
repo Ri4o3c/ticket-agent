@@ -61,15 +61,16 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         return model.histories
 
     async def test_followup_includes_previous_question_and_answer(self):
+        # 此测试只验证历史保留；产品事实现在必须有检索引用，改用不依赖知识库的姓名追问。
         histories = await self.run_session(
-            ['PDF最大多大？', 'END', '那页数呢？', 'END', 'EXIT'],
-            [AIMessage(content='最大10MB。'), AIMessage(content='最多200页。')],
+            ['我叫小明', 'END', '我叫什么？', 'END', 'EXIT'],
+            [AIMessage(content='你好，小明。'), AIMessage(content='你叫小明。')],
         )
         self.assertEqual(len(histories), 2)
         second = histories[1]
-        self.assertIn(('human', 'PDF最大多大？'), second)
-        self.assertIn(('human', '那页数呢？'), second)
-        self.assertTrue(any(isinstance(m, AIMessage) and m.content == '最大10MB。' for m in second))
+        self.assertIn(('human', '我叫小明'), second)
+        self.assertIn(('human', '我叫什么？'), second)
+        self.assertTrue(any(isinstance(m, AIMessage) and m.content == '你好，小明。' for m in second))
         self.assertEqual(sum(isinstance(m, tuple) and m[0] == 'system' for m in second), 1)
 
     async def test_exit_does_not_send_command_to_model(self):

@@ -63,7 +63,7 @@ function addMessage(role,text) {
 /* 开发说明：把工具步骤追加到可折叠过程列表；展示“完成”只按该工具的ok字段判断。 */
 function traceRow(text,cls='') {
   if(!trace) {const details=node('details','trace');details.append(node('summary','','查看处理过程'));trace=node('div','trace-list');details.append(trace);messages.append(details);}
-  trace.append(node('div','trace-row '+cls,text));
+  const row=node('div','trace-row '+cls,text);trace.append(row);return row;
 }
 /* 开发说明：草稿卡展示待核对标题/描述，确认与取消按钮只提交选择，不自行写工单。 */
 function draftCard(draft) {
@@ -104,17 +104,23 @@ function showReferences(active) {
 /* 开发说明：消费后端结构化事件：round/tool_call展示进度，draft等待确认，decision展示人的选择。
  * tool_result才更新检索来源或正式工单卡；done只表示本次处理结束，不代表业务一定成功。 */
 function handle(event) {
+  if(event.type==='trace'&&event.phase==='started'&&event.run_id) {
+    const link=node('button','run-link','查看本次执行记录');link.type='button';
+    link.onclick=()=>openRuns(event.run_id);traceRow('').append(link);
+  }
   if(event.type==='message') {addMessage(event.role,event.content);if(event.role==='assistant')activity('');}
   if(event.type==='round')activity('正在理解问题…');
   if(event.type==='tool_call') {const label=toolLabels[event.name]||'处理请求';activity('正在'+label+'…');traceRow(label);}
   if(event.type==='status')activity(event.content);
+  if(event.type==='trace_warning')traceRow(event.content,'error');
   if(event.type==='draft') {activity('等待你核对草稿');draftCard(event.draft);}
   if(event.type==='decision') {
     const card=drafts.get(event.draft_id);
-    if(card){card.yes.disabled=card.no.disabled=true;card.badge.textContent=event.approved?'已确认':'已取消';card.badge.className='badge '+(event.approved?'done':'cancelled');card.actions.replaceChildren(node('span','decision-note',event.approved?'已记录确认，正在等待正式创建结果。':'本次创建已取消，未登记正式工单。'));}
+    // 超时来自服务端审批期限；禁用原草稿按钮并解释取消原因，避免误认为已经提交。
+    if(card){card.yes.disabled=card.no.disabled=true;card.badge.textContent=event.reason==='expired'?'确认已超时':event.approved?'已确认':'已取消';card.badge.className='badge '+(event.approved?'done':'cancelled');card.actions.replaceChildren(node('span','decision-note',event.reason==='expired'?'确认已超时，本次创建已取消，草稿未获批准。':event.approved?'已记录确认，正在等待正式创建结果。':'本次创建已取消，未登记正式工单。'));}
   }
   if(event.type==='tool_result') {
-    const data=event.data;traceRow((toolLabels[event.name]||'操作')+(data.cancelled?' · 已取消':data.skipped?' · 未执行':data.ok?' · 完成':' · 未完成'),data.ok?'success':'failure');
+    const data=event.data;traceRow((toolLabels[event.name]||'操作')+(data.outcome_unknown?' · 结果待核查':data.cancelled?' · 已取消':data.skipped?' · 未执行':data.ok?' · 完成':' · 未完成'),data.ok&&!data.outcome_unknown?'success':'failure');
     if(event.name==='search_docs'&&data.ok) {
       for(const doc of data.results||[])if(doc.knowledge_id)sources.set(doc.knowledge_id,doc);
       const b=node('button','reference-toggle');b.type='button';b.append(icon('book'),document.createTextNode(`查看参考资料 · ${(data.results||[]).length} 条`));b.onclick=()=>showReferences();messages.append(b);
@@ -214,6 +220,128 @@ $('#create-kb-form').onsubmit=async event=>{
   try{const data=await api('/api/knowledge/bases',{method:'POST',body:JSON.stringify({name})});await loadBases();$('#upload-kb').value=data.knowledge_base.id;$('#kb-name').value='';uploadFeedback(`已创建“${data.knowledge_base.name}”，现在可以向此库上传资料。`,'success');await loadKnowledge();}
   catch(e){uploadFeedback(e.message||'创建知识库未完成，请刷新后核查。','error');}
   finally{creatingBase=false;controls();}
+};
+
+/* 执行记录读取：两个游标分别保护列表和详情，旧请求不能覆盖新选择。
+ * 这里只调用只读接口，页面不会用run状态推断任务成功或重新执行业务动作。 */
+let runListEpoch=0, runDetailEpoch=0, selectedRunId=null;
+const runLabels={running:'未记录结束',completed:'执行结束',failed:'执行或记录异常',cancelled:'已取消'};
+const stepLabels={running:'未记录结束',succeeded:'步骤成功',failed:'步骤失败',unknown:'结果未知',cancelled:'已取消'};
+const kindLabels={model:'模型调用',tool:'工具处理',approval:'人工确认',validation:'程序校验'};
+function runBadge(status,step=false) {
+  const labels=step?stepLabels:runLabels;
+  const cls=status==='failed'?'bad':status==='unknown'?'uncertain':status==='running'?'pending':'';
+  return node('span','run-badge '+cls,labels[status]||'未知状态');
+}
+function milliseconds(value) {
+  if(typeof value!=='number'||!Number.isFinite(value)||value<0)return '未采集';
+  return value<1000?value.toFixed(1)+' ms':(value/1000).toFixed(2)+' s';
+}
+function runTime(value) {
+  if(!value)return '未记录';const time=new Date(value);
+  return Number.isNaN(time.valueOf())?'未知时间':time.toLocaleString('zh-CN',{hour12:false});
+}
+function tokenCount(value) {return typeof value==='number'&&Number.isFinite(value)?String(value):'未采集';}
+function runMessage(container,text,error=false) {
+  container.replaceChildren(node('p','run-empty'+(error?' run-query-error':''),text));
+}
+function highlightRun() {
+  document.querySelectorAll('#run-list [data-run-id]').forEach(button=>{
+    const active=button.dataset.runId===selectedRunId;button.classList.toggle('selected',active);
+    if(active)button.setAttribute('aria-current','true');else button.removeAttribute('aria-current');
+  });
+}
+function renderRunList(runs) {
+  const list=$('#run-list');list.replaceChildren();
+  if(!runs.length){runMessage(list,'还没有执行记录。提交一次提问后，刷新这里查看。');return;}
+  for(const run of runs) {
+    const button=node('button','run-item');button.type='button';button.dataset.runId=run.run_id;
+    const head=node('div','run-item-head');head.append(runBadge(run.status),node('span','',runTime(run.started_at)));
+    button.append(head,node('strong','run-code',run.run_id),node('span','run-item-model',run.model_name||'模型名称未记录'));
+    button.onclick=()=>showRun(run.run_id);list.append(button);
+  }
+  highlightRun();
+}
+function renderRunDetail(data) {
+  const run=data.run,steps=data.steps,detail=$('#run-detail');detail.replaceChildren();
+  const head=node('div','run-detail-head');head.append(node('h3','','执行详情'),runBadge(run.status));
+  detail.append(head,node('div','run-code run-full-id',run.run_id));
+  const meta=node('dl','run-meta');
+  const base=bases.find(item=>item.id===run.knowledge_base_id);
+  for(const [label,value] of [['聊天模型',run.model_name||'未记录'],['知识库',base?.name||run.knowledge_base_id||'未记录'],
+                             ['开始时间',runTime(run.started_at)],['结束时间',runTime(run.finished_at)]]) {
+    const pair=node('div');pair.append(node('dt','',label),node('dd','',value));meta.append(pair);
+  }
+  detail.append(meta);
+  const modelSteps=steps.filter(step=>step.kind==='model'),approvalSteps=steps.filter(step=>step.kind==='approval');
+  const sumDuration=items=>items.length&&items.every(step=>typeof step.duration_ms==='number'&&Number.isFinite(step.duration_ms))
+    ?milliseconds(items.reduce((sum,step)=>sum+step.duration_ms,0)):items.length?'部分未采集':'无此类步骤';
+  const sumTokens=field=>modelSteps.length&&modelSteps.every(step=>typeof step[field]==='number')
+    ?String(modelSteps.reduce((sum,step)=>sum+step[field],0)):'未完整采集';
+  const total=run.finished_at?milliseconds(new Date(run.finished_at)-new Date(run.started_at)):'未记录结束';
+  const metrics=node('div','run-metrics');
+  for(const [label,value] of [['整次执行',total],['模型耗时',sumDuration(modelSteps)],['审批等待与记录',sumDuration(approvalSteps)],
+                             ['聊天 Token','输入 '+sumTokens('input_tokens')+' / 输出 '+sumTokens('output_tokens')]]) {
+    const card=node('div','run-metric');card.append(node('span','',label),node('strong','',value));metrics.append(card);
+  }
+  detail.append(metrics,node('p','run-status-note','“未记录结束”不证明进程仍在运行；“执行结束”也不证明回答正确。时间按浏览器本地时区显示。'));
+  detail.append(node('h4','run-steps-title','执行步骤 · '+steps.length));
+  if(!steps.length){detail.append(node('p','run-empty','尚无步骤记录，可能还未开始或记录不完整。'));return;}
+  const container=node('div','run-steps');
+  for(const step of steps) {
+    const card=node('article','run-step');
+    const title=node('div','run-step-head');title.append(node('span','run-step-position',step.position),
+      node('strong','',(kindLabels[step.kind]||step.kind)+' · '+(toolLabels[step.name]||step.name)),runBadge(step.status,true));
+    card.append(title,node('div','run-code run-step-name',step.name));
+    let values='耗时 '+milliseconds(step.duration_ms);
+    if(step.kind==='model')values+=' · 输入 '+tokenCount(step.input_tokens)+' / 输出 '+tokenCount(step.output_tokens)+' token';
+    card.append(node('p','run-step-values',values));
+    if(step.error_type)card.append(node('p','run-step-error','错误类型：'+step.error_type));
+    if(step.request_id)card.append(node('p','run-code run-request','原创建请求：'+step.request_id));
+    container.append(card);
+  }
+  detail.append(container);
+}
+async function showRun(id) {
+  const current=++runDetailEpoch;selectedRunId=id;$('#run-id').value=id;highlightRun();
+  const detail=$('#run-detail');runMessage(detail,'正在读取执行详情…');detail.setAttribute('aria-busy','true');$('#query-run').disabled=true;
+  try {
+    const data=await api('/api/runs/'+encodeURIComponent(id));
+    if(current===runDetailEpoch&&$('#runs-dialog').open)renderRunDetail(data);
+  }catch(error){if(current===runDetailEpoch&&$('#runs-dialog').open)runMessage(detail,error.message||'无法读取执行详情。',true);}
+  finally{if(current===runDetailEpoch){detail.removeAttribute('aria-busy');$('#query-run').disabled=false;}}
+}
+async function loadRuns(refreshDetail=true) {
+  const current=++runListEpoch;$('#refresh-runs').disabled=true;
+  runMessage($('#run-list'),'正在读取近期执行…');
+  try {
+    const data=await api('/api/runs?limit=50');
+    if(current!==runListEpoch||!$('#runs-dialog').open)return;
+    renderRunList(data.runs);
+    if(refreshDetail) {
+      if(selectedRunId)await showRun(selectedRunId);
+      else if(data.runs.length)await showRun(data.runs[0].run_id);
+      else runMessage($('#run-detail'),'选择一条记录查看步骤。');
+    }
+  }catch(error){if(current===runListEpoch&&$('#runs-dialog').open)runMessage($('#run-list'),error.message||'无法读取执行列表。',true);}
+  finally{if(current===runListEpoch)$('#refresh-runs').disabled=false;}
+}
+async function openRuns(id=null) {
+  if(!$('#runs-dialog').open)$('#runs-dialog').showModal();
+  if(id) {selectedRunId=id;await Promise.all([loadRuns(false),showRun(id)]);}
+  else await loadRuns();
+}
+$('#open-runs').onclick=()=>openRuns();
+$('#close-runs').onclick=()=>$('#runs-dialog').close();
+$('#runs-dialog').addEventListener('close',()=>{
+  runListEpoch++;runDetailEpoch++;
+  // 关闭时旧请求的finally会因游标失效而跳过，因此在这里同步恢复控件。
+  $('#run-detail').removeAttribute('aria-busy');$('#query-run').disabled=false;$('#refresh-runs').disabled=false;
+});
+$('#refresh-runs').onclick=()=>loadRuns();
+$('#run-search').onsubmit=event=>{
+  event.preventDefault();const id=$('#run-id').value.trim();
+  if(id)showRun(id);else {selectedRunId=null;loadRuns();}
 };
 $('#knowledge-file').onchange=()=>{const file=$('#knowledge-file').files[0];$('#selected-file').textContent=file?file.name:'选择一份知识资料';uploadFeedback('');controls();};
 /* 开发说明：以FormData上传单个文件，由后端解析、分块、向量化并核对完成。
